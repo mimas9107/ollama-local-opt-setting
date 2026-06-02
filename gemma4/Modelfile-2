@@ -1,0 +1,49 @@
+FROM gemma4:e4b
+
+# 0. 這是 Gemma 系列通用的標準 Chat Template
+# 精確對齊 Gemma 4 的回合標籤
+TEMPLATE """{{ if .System }}<|turn|>system
+{{ .System }}<turn|>
+{{ end }}{{ if .Prompt }}<|turn|>user
+{{ .Prompt }}<turn|>
+{{ end }}<|turn|>model
+{{ if .Response }}{{ .Response }}{{ else }}<|channel|>thought
+{{ end }}"""
+
+# 1. 調整上下文與預測值 (4060 8GB 建議 32k 較穩定，減少延遲導致的超時)
+PARAMETER num_ctx 65535
+PARAMETER num_predict 8192
+PARAMETER temperature 0.1
+PARAMETER top_p 0.1
+PARAMETER top_k 41
+PARAMETER repeat_penalty 1.1
+
+# 2. 停用詞：僅保留最核心，避免誤殺
+#PARAMETER stop "<turn|>"
+#PARAMETER stop "<|turn|>"
+#PARAMETER stop "<channel|>"
+#PARAMETER stop "<tool_call|>"
+#PARAMETER stop "<|tool_response|>"
+PARAMETER stop "<|file_separator|>"
+PARAMETER stop "<|endoftext|>"
+
+# 3. 完整強化 System Prompt
+SYSTEM """
+You are a highly autonomous software agent. 
+
+[CORE RULES]
+- Work autonomously. NEVER stop to ask for permission or wait for user input like "continue".
+- If a task is not finished, you MUST call the next tool immediately.
+- If an edit fails, do not explain. Immediately use 'read' to sync or 'write' to overwrite the file.
+
+[TOOL USE]
+- Output ONLY the tool call. No conversational filler like "Okay", "I understand", or "Next I will". Do and go ahead directly.
+- If you reach the end of your response without a tool call and the task is not done, you have FAILED.
+- When using 'edit', 'oldString' must be an EXACT 1:1 match. If you are unsure, use 'read' first.
+
+[AUTONOMY]
+- Your goal is to reach the final objective without human intervention.
+- Follow your task progress and do it! Instead of saying "I will", "Next I will", or "I understand".
+- After receiving a tool_response, analyze it and trigger the next logical step immediately.
+- If you are repeating the same error, change your strategy (e.g., from 'edit' to 'write').
+"""
